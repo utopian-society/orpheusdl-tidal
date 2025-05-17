@@ -27,7 +27,8 @@ module_information = ModuleInformation(
         'mobile_hires_token': '6BDSRdpK9hqEBTgU',
         'enable_mobile': True,
         'prefer_ac4': False,
-        'fix_mqa': True
+        'fix_mqa': True,
+        'tidal_token': ''
     },
     # currently too broken to keep it, cover needs to be jpg else crash, problems on termux due to pillow
     # flags=ModuleFlags.needs_cover_resize,
@@ -66,12 +67,23 @@ class ModuleInterface:
 
         # save all the TidalSession objects
         sessions = {}
+
         self.available_sessions = [SessionType.TV.name, SessionType.MOBILE_DEFAULT.name, SessionType.MOBILE_ATMOS.name]
 
         # load all saved sessions (TV, Mobile Atmos, Mobile Default)
         saved_sessions = module_controller.temporary_settings_controller.read('sessions')
+
         if not saved_sessions:
             saved_sessions = {}
+        else:
+            # print available stored sessions and their country code
+            country_codes = set(entry['country_code'] for entry in saved_sessions.values())
+            sessions_list = ' - '.join(saved_sessions.keys())
+            if len(country_codes) == 1:
+                result = f"Using saved sessions: {sessions_list} ({country_codes.pop()})"
+            else:
+                result = "Using saved sessions: " + " - ".join(f"{key} ({entry['country_code']})" for key, entry in saved_sessions.items())
+            print(result)
 
         if not self.settings['enable_mobile']:
             self.available_sessions = [SessionType.TV.name]
@@ -79,8 +91,8 @@ class ModuleInterface:
         while True:
             login_session = None
 
-            def auth_and_save_session(session, session_type):
-                session = self.auth_session(session, session_type, login_session)
+            def auth_and_save_session(session, session_type, tidal_token=None):
+                session = self.auth_session(session, session_type, login_session, tidal_token)
 
                 # get the dict representation from the TidalSession object and save it into saved_session/loginstorage
                 saved_sessions[session_type] = session.get_storage()
@@ -95,11 +107,10 @@ class ModuleInterface:
                 else:
                     self.print(f'{module_information.service_name}: Choose a login method:')
                     self.print(f'{module_information.service_name}: 1. TV (browser)')
-                    self.print(
-                        f"{module_information.service_name}: 2. Mobile (username and password, choose TV if this doesn't work)")
+                    self.print(f"{module_information.service_name}: 2. Mobile (choose TV if this doesn't work)")
 
                     while not login_session_type:
-                        input_str = input(' Login method: ')
+                        input_str = input(' Login method: ').strip().lower()
                         try:
                             login_session_type = {
                                 '1': SessionType.TV.name,
@@ -110,7 +121,21 @@ class ModuleInterface:
                         except KeyError:
                             self.print(f'{module_information.service_name}: Invalid choice, try again')
 
-                login_session = auth_and_save_session(self.init_session(login_session_type), login_session_type)
+                    while True:
+                        reply = input(' Use a tidal_token instead of email/password? (Y/n): ').strip().lower()
+                        if reply in ["y", "yes"]:
+                            tidal_token = module_controller.module_settings['tidal_token']
+                            if not tidal_token:
+                                tidal_token = input(' No stored tidal_token detected, paste it here: ').strip()
+                            break
+                        elif reply in ["n", "no"]:
+                            break
+                        else:
+                            self.print(f'{module_information.service_name}: Reply with (Y)es or (N)o')
+
+                login_session = auth_and_save_session(self.init_session(login_session_type), login_session_type, tidal_token)
+
+                print(f"Account Country: {login_session.country_code}")
 
             for session_type in self.available_sessions:
                 sessions[session_type] = self.init_session(session_type)
@@ -168,8 +193,11 @@ class ModuleInterface:
             session = TidalMobileSession(self.settings['mobile_hires_token'])
         return session
 
-    def auth_session(self, session, session_type, login_session):
-        if login_session:
+    def auth_session(self, session, session_type, login_session, tidal_token=None):
+        if tidal_token:
+            session.refresh_token = tidal_token
+            session.refresh()
+        elif login_session:
             # refresh tokens can be used with any client id
             # this can be used to switch to any client type from an existing session
             session.refresh_token = login_session.refresh_token
