@@ -334,6 +334,25 @@ class TidalMobileSession(TidalSession):
     def auth(self, username: str, password: str):
         s = requests.Session()
 
+        # try Tidal DataDome cookie request
+        r = s.post('https://dd.tidal.com/js/', data={
+            'jsData': f'{{"opts":"endpoint,ajaxListenerPath","ua":"{self.user_agent}"}}',
+            'ddk': '1F633CDD8EF22541BD6D9B1B8EF13A',  # API Key (required)
+            'Referer': quote(r.url),  # Referer authorize link (required)
+            'responsePage': 'origin',  # useless?
+            'ddv': '4.17.0'  # useless?
+        }, headers={
+            'user-agent': self.user_agent,
+            'content-type': 'application/x-www-form-urlencoded'
+        })
+
+        if r.status_code != 200 or not r.json().get('cookie'):
+            raise TidalAuthError("TIDAL BOT protection, could not get DataDome cookie!")
+
+        # get the cookie from the json request and save it in the session
+        dd_cookie = r.json().get('cookie').split(';')[0]
+        s.cookies[dd_cookie.split('=')[0]] = dd_cookie.split('=')[1]
+
         params = {
             'response_type': 'code',
             'redirect_uri': self.redirect_uri,
@@ -358,25 +377,6 @@ class TidalMobileSession(TidalSession):
         elif r.status_code == 403:
             raise TidalAuthError("TIDAL BOT protection, try again later!")
 
-        # try Tidal DataDome cookie request
-        r = s.post('https://dd.tidal.com/js/', data={
-            'jsData': f'{{"opts":"endpoint,ajaxListenerPath","ua":"{self.user_agent}"}}',
-            'ddk': '1F633CDD8EF22541BD6D9B1B8EF13A',  # API Key (required)
-            'Referer': quote(r.url),  # Referer authorize link (required)
-            'responsePage': 'origin',  # useless?
-            'ddv': '4.17.0'  # useless?
-        }, headers={
-            'user-agent': self.user_agent,
-            'content-type': 'application/x-www-form-urlencoded'
-        })
-
-        if r.status_code != 200 or not r.json().get('cookie'):
-            raise TidalAuthError("TIDAL BOT protection, could not get DataDome cookie!")
-
-        # get the cookie from the json request and save it in the session
-        dd_cookie = r.json().get('cookie').split(';')[0]
-        s.cookies[dd_cookie.split('=')[0]] = dd_cookie.split('=')[1]
-
         # enter email, verify email is valid
         r = s.post(self.TIDAL_LOGIN_BASE + 'email', params=params, json={
             'email': username
@@ -394,7 +394,7 @@ class TidalMobileSession(TidalSession):
 
         if not r.json()['isValidEmail']:
             raise TidalAuthError('Invalid email')
-        if r.json()['newUser']:
+        if r.json()['isNewUser']:
             raise TidalAuthError('User does not exist')
 
         # login with user credentials
@@ -466,6 +466,12 @@ class TidalMobileSession(TidalSession):
             # print('TIDAL: Refreshing token successful')
             self.access_token = r.json()['access_token']
             self.expires = datetime.now() + timedelta(seconds=r.json()['expires_in'])
+
+            # they're already stored if logging in with email/pass
+            if not self.user_id:
+                self.user_id = r.json().get('user', {}).get('userId')
+            if not self.country_code:
+                self.country_code = r.json().get('user', {}).get('countryCode')
 
             if 'refresh_token' in r.json():
                 self.refresh_token = r.json()['refresh_token']
@@ -581,6 +587,12 @@ class TidalTvSession(TidalSession):
             # print('TIDAL: Refreshing token successful')
             self.access_token = r.json()['access_token']
             self.expires = datetime.now() + timedelta(seconds=r.json()['expires_in'])
+
+            # they're already stored if logging in with email/pass
+            if not self.user_id:
+                self.user_id = r.json().get('user', {}).get('userId')
+            if not self.country_code:
+                self.country_code = r.json().get('user', {}).get('countryCode')
 
             if 'refresh_token' in r.json():
                 self.refresh_token = r.json()['refresh_token']
