@@ -83,6 +83,7 @@ class ModuleInterface:
 
         while True:
             login_session = None
+            relogin_requested = False
 
             def auth_and_save_session(session, session_type, tidal_token=None):
                 session = self.auth_session(session, session_type, login_session, tidal_token)
@@ -161,6 +162,7 @@ class ModuleInterface:
 
                     # reset saved sessions and loop back to login
                     saved_sessions = {}
+                    # flag used to not ask 2 times in a row to relogin
                     relogin_requested = True
                     break
 
