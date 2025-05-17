@@ -73,17 +73,10 @@ class ModuleInterface:
         # load all saved sessions (TV, Mobile Atmos, Mobile Default)
         saved_sessions = module_controller.temporary_settings_controller.read('sessions')
 
+        tidal_token = module_controller.module_settings.get('tidal_token')
+
         if not saved_sessions:
             saved_sessions = {}
-        else:
-            # print available stored sessions and their country code
-            country_codes = set(entry['country_code'] for entry in saved_sessions.values())
-            sessions_list = ' - '.join(saved_sessions.keys())
-            if len(country_codes) == 1:
-                result = f"Using saved sessions: {sessions_list} ({country_codes.pop()})"
-            else:
-                result = "Using saved sessions: " + " - ".join(f"{key} ({entry['country_code']})" for key, entry in saved_sessions.items())
-            print(result)
 
         if not self.settings['enable_mobile']:
             self.available_sessions = [SessionType.TV.name]
@@ -117,25 +110,25 @@ class ModuleInterface:
                                 'tv': SessionType.TV.name,
                                 '2': SessionType.MOBILE_DEFAULT.name,
                                 'mobile': SessionType.MOBILE_DEFAULT.name,
-                            }[input_str.lower()]
+                            }[input_str]
                         except KeyError:
                             self.print(f'{module_information.service_name}: Invalid choice, try again')
 
+                    # auto use tidal_token if present in config.json else prompt it
                     while True:
                         reply = input(' Use a tidal_token instead of email/password? (Y/n): ').strip().lower()
                         if reply in ["y", "yes"]:
-                            tidal_token = module_controller.module_settings['tidal_token']
                             if not tidal_token:
                                 tidal_token = input(' No stored tidal_token detected, paste it here: ').strip()
                             break
                         elif reply in ["n", "no"]:
+                            tidal_token = None
                             break
                         else:
                             self.print(f'{module_information.service_name}: Reply with (Y)es or (N)o')
 
                 login_session = auth_and_save_session(self.init_session(login_session_type), login_session_type, tidal_token)
-
-                print(f"Account Country: {login_session.country_code}")
+                self.print(f"Account Country: {login_session.country_code}")
 
             for session_type in self.available_sessions:
                 sessions[session_type] = self.init_session(session_type)
@@ -160,20 +153,36 @@ class ModuleInterface:
                 # check for a valid subscription
                 subscription = self.check_subscription(sessions[session_type].get_subscription())
                 if not subscription:
-                    confirm = input(' Do you want to relogin? [Y/n]: ')
+                    confirm = input(' Do you want to relogin? [Y/n]: ').strip().lower()
 
-                    if confirm.upper() == 'N':
+                    if confirm in ('n', 'no'):
                         self.print('Exiting...')
                         exit()
 
                     # reset saved sessions and loop back to login
                     saved_sessions = {}
+                    relogin_requested = True
                     break
 
                 if not login_session:
                     login_session = sessions[session_type]
 
+            # check if tidal_token in config.json matches any saved refresh_token to swap between them easily
+            if tidal_token and not relogin_requested and tidal_token not in [v.get('refresh_token') for v in saved_sessions.values()]:
+                confirm = input(' Stored tidal_token differs from setting.json - Do you want to relogin? [Y/n]: ').strip().lower()
+                if confirm in ('y', 'yes'):
+                    saved_sessions = {}
+                    continue  # Restart the while loop to re-authenticate
+
             if saved_sessions:
+                # print available stored sessions and their country code
+                country_codes = set(entry['country_code'] for entry in saved_sessions.values())
+                sessions_list = ' - '.join(saved_sessions.keys())
+                if len(country_codes) == 1:
+                    result = f"Using saved sessions: {sessions_list} ({country_codes.pop()})"
+                else:
+                    result = "Using saved sessions: " + " - ".join(f"{key} ({entry['country_code']})" for key, entry in saved_sessions.items())
+                self.print(result)
                 break
 
         # only needed for region locked albums where the track is available but force_album_format is used
@@ -221,7 +230,7 @@ class ModuleInterface:
     def check_subscription(self, subscription: str) -> bool:
         # returns true if "disable_subscription_checks" is enabled or subscription is HIFI (Plus)
         if not self.disable_subscription_check and subscription not in {'HIFI', 'PREMIUM', 'PREMIUM_PLUS'}:
-            self.print(f'{module_information.service_name}: Account does not have a HiFi (Plus) subscription, '
+            self.print(f'{module_information.service_name}: Account is expired or does not have a HiFi (Plus) subscription, '
                        f'detected subscription: {subscription}')
             return False
         return True

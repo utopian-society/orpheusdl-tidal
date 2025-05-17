@@ -13,7 +13,7 @@ import requests
 import urllib3
 
 import urllib.parse as urlparse
-from urllib.parse import parse_qs, quote
+from urllib.parse import parse_qs, quote, urlencode
 from datetime import datetime, timedelta
 
 from utils.utils import create_requests_session
@@ -334,11 +334,25 @@ class TidalMobileSession(TidalSession):
     def auth(self, username: str, password: str):
         s = requests.Session()
 
+        params = {
+            'response_type': 'code',
+            'redirect_uri': self.redirect_uri,
+            'lang': 'en_US',
+            'appMode': 'android',
+            'client_id': self.client_id,
+            'client_unique_key': self.client_unique_key,
+            'code_challenge': self.code_challenge,
+            'code_challenge_method': 'S256',
+            'restrict_signup': 'true'
+        }
+
+        full_authorize_url = f"https://login.tidal.com/authorize?{urlencode(params)}"
+
         # try Tidal DataDome cookie request
         r = s.post('https://dd.tidal.com/js/', data={
             'jsData': f'{{"opts":"endpoint,ajaxListenerPath","ua":"{self.user_agent}"}}',
             'ddk': '1F633CDD8EF22541BD6D9B1B8EF13A',  # API Key (required)
-            'Referer': quote(r.url),  # Referer authorize link (required)
+            'Referer': quote(full_authorize_url),  # Referer authorize link (required)
             'responsePage': 'origin',  # useless?
             'ddv': '4.17.0'  # useless?
         }, headers={
@@ -352,18 +366,6 @@ class TidalMobileSession(TidalSession):
         # get the cookie from the json request and save it in the session
         dd_cookie = r.json().get('cookie').split(';')[0]
         s.cookies[dd_cookie.split('=')[0]] = dd_cookie.split('=')[1]
-
-        params = {
-            'response_type': 'code',
-            'redirect_uri': self.redirect_uri,
-            'lang': 'en_US',
-            'appMode': 'android',
-            'client_id': self.client_id,
-            'client_unique_key': self.client_unique_key,
-            'code_challenge': self.code_challenge,
-            'code_challenge_method': 'S256',
-            'restrict_signup': 'true'
-        }
 
         # retrieve csrf token for subsequent request
         r = s.get('https://login.tidal.com/authorize', params=params, headers={
@@ -596,6 +598,9 @@ class TidalTvSession(TidalSession):
 
             if 'refresh_token' in r.json():
                 self.refresh_token = r.json()['refresh_token']
+
+        elif r.status_code == 401:
+            print('\tERROR: ' + r.json()['userMessage'])
 
         return r.status_code == 200
 
