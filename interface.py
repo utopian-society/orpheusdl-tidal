@@ -45,6 +45,7 @@ module_information = ModuleInformation(
         "enable_mobile": True,
         "prefer_ac4": False,
         "fix_mqa": False,
+        'tidal_token': ''
     },
     # currently too broken to keep it, cover needs to be jpg else crash, problems on termux due to pillow
     # flags=ModuleFlags.needs_cover_resize,
@@ -147,18 +148,18 @@ class ModuleInterface:
                         except KeyError:
                             self.print(f'{module_information.service_name}: Invalid choice, try again')
 
-                    # auto use tidal_token if present in config.json else prompt it
-                    while True:
-                        reply = input(' Use a tidal_token instead of email/password? (Y/n): ').strip().lower()
-                        if reply in ("y", "yes"):
-                            if not tidal_token:
-                                tidal_token = input(' No stored tidal_token detected, paste it here: ').strip()
-                            break
-                        elif reply in ("n", "no"):
-                            tidal_token = None
-                            break
-                        else:
-                            self.print(f'{module_information.service_name}: Reply with (Y)es or (N)o')
+                # auto use tidal_token if present in config.json else prompt it
+                while True:
+                    reply = input(' Use a tidal_token instead of email/password? (Y/n): ').strip().lower()
+                    if reply in ("y", "yes"):
+                        if not tidal_token:
+                            tidal_token = input(' No stored tidal_token detected, paste it here: ').strip()
+                        break
+                    elif reply in ("n", "no"):
+                        tidal_token = None
+                        break
+                    else:
+                        self.print(f'{module_information.service_name}: Reply with (Y)es or (N)o')
 
                 login_session = auth_and_save_session(
                     self.init_session(login_session_type), login_session_type, tidal_token
