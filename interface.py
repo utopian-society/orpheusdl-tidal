@@ -982,6 +982,8 @@ class ModuleInterface:
             )
 
         # download all segments and save the locations inside temp_locations
+        # Note: downloader_settings relies on global fallback (get_global_downloader_settings)
+        # across module boundary since Tidal ModuleInterface does not receive downloader settings.
         temp_locations = []
         for download_url in bar:
             temp_locations.append(download_to_temp(download_url, extension="mp4"))
